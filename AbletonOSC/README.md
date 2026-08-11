@@ -214,8 +214,14 @@ Represents the view (user interface) of live
 | /live/view/set/selected_device         | track_index, device_index|                          | Set the selected device (first device = 0)              |
 | /live/view/start_listen/selected_scene |                          | selected_scene           | Start listening to the selected scene (first scene = 0) |
 | /live/view/start_listen/selected_track |                          | selected_track           | Start listening to selected track (first track = 0)     |
+| /live/view/start_listen/selected_device|                          | track_index, device_index on `/live/view/get/selected_device_changed` | Follow the selected top-level device and rebind when the track changes |
 | /live/view/stop_listen/selected_scene  |                          |                          | Stop listening to the selected scene (first scene = 0)  |
 | /live/view/stop_listen/selected_track  |                          |                          | Stop listening to selected track (first track = 0)      |
+| /live/view/stop_listen/selected_device |                          |                          | Stop following the selected device                      |
+
+`selected_device` reports `-1` for a device index when no device is selected or
+when Live highlights a device nested inside a Rack chain. Return and Master
+tracks report `(-1, -1)` because this API currently addresses regular tracks.
 </details>
 
 ---
@@ -483,24 +489,43 @@ Represents an instrument or effect.
 |:-----------------------------------------|:-----------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------|
 | /live/device/get/name                    | track_id, device_id                      | track_id, device_id, name                | Get device name                                                                         |
 | /live/device/get/class_name              | track_id, device_id                      | track_id, device_id, class_name          | Get device class_name                                                                   |
+| /live/device/get/class_display_name      | track_id, device_id                      | track_id, device_id, display_name        | Get Live's human-readable device class                                                   |
 | /live/device/get/type                    | track_id, device_id                      | track_id, device_id, type                | Get device type                                                                         |
+| /live/device/get/can_have_chains         | track_id, device_id                      | track_id, device_id, value               | Query whether the device can contain chains                                              |
+| /live/device/get/can_have_drum_pads      | track_id, device_id                      | track_id, device_id, value               | Query whether the device can contain drum pads                                           |
+| /live/device/start_listen/name           | track_id, device_id                      | updates on `/live/device/get/name`       | Start listening for device-name changes                                                  |
+| /live/device/stop_listen/name            | track_id, device_id                      |                                          | Stop listening for device-name changes                                                   |
 | /live/device/get/num_parameters          | track_id, device_id                      | track_id, device_id, num_parameters      | Get the number of parameters exposed by the device                                      |
+| /live/device/start_listen/parameters     | track_id, device_id                      | changes on `/live/device/get/parameters_changed` | Listen for Configure-list replacement/reordering                               |
+| /live/device/stop_listen/parameters      | track_id, device_id                      |                                          | Stop listening for Configure-list changes                                                |
 | /live/device/get/parameters/name         | track_id, device_id                      | track_id, device_id, [name, ...]         | Get the list of parameter names exposed by the device                                   |
+| /live/device/get/parameters/original_name| track_id, device_id                      | track_id, device_id, [name, ...]         | Get the parameters' stable original names                                                |
 | /live/device/get/parameters/value        | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter values                                                         |
+| /live/device/get/parameters/value_string | track_id, device_id                      | track_id, device_id, [label, ...]        | Get display-formatted parameter values                                                   |
 | /live/device/get/parameters/min          | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter minimum values                                                 |
 | /live/device/get/parameters/max          | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the device parameter maximum values                                                 |
 | /live/device/get/parameters/is_quantized | track_id, device_id                      | track_id, device_id, [value, ...]        | Get the list of is_quantized settings (i.e., whether the parameter must be an int/bool) |
+| /live/device/get/parameters/is_enabled   | track_id, device_id                      | track_id, device_id, [value, ...]        | Get whether each exposed parameter is currently enabled                                  |
 | /live/device/set/parameters/value        | track_id, device_id, value, value ...    |                                          | Set the device parameter values                                                         |
 | /live/device/get/parameter/value         | track_id, device_id, parameter_id        | track_id, device_id, parameter_id, value | Get a device parameter value                                                            |
 | /live/device/get/parameter/value_string  | track_id, device_id, parameter_id        | track_id, device_id, parameter_id, value | Get the device parameter value as a readable string ex: 2500 Hz                         |
+| /live/device/get/parameter/value_items   | track_id, device_id, parameter_id        | track_id, device_id, parameter_id, [label, ...] | Get labels for a quantized parameter                                           |
 | /live/device/set/parameter/value         | track_id, device_id, parameter_id, value |                                          | Set a device parameter value                                                            |
+| /live/device/start_listen/parameter/value| track_id, device_id, parameter_id        | updates on value and value_string addresses | Start two-way value updates                                                          |
+| /live/device/stop_listen/parameter/value | track_id, device_id, parameter_id        |                                          | Stop value updates                                                                      |
+| /live/device/get/presets                 | track_id, device_id                      | track_id, device_id, [preset, ...]       | Get host presets exposed by a Live 12.3+ PluginDevice                                    |
+| /live/device/get/selected_preset_index   | track_id, device_id                      | track_id, device_id, preset_index        | Get the selected host preset                                                            |
+| /live/device/set/selected_preset_index   | track_id, device_id, preset_index        | track_id, device_id, preset_index        | Select a host preset                                                                    |
 
 For devices:
 
 - `name` is the human-readable name
-- `type` is 1 = audio_effect, 2 = instrument, 4 = midi_effect
+- `type` is 0 = audio_effect, 1 = instrument, 2 = midi_effect
 - `class_name` is the Live instrument/effect name, e.g. Operator, Reverb. For external plugins and racks, can be
   AuPluginDevice, PluginDevice, InstrumentGroupDevice...
+- Plug-ins that do not expose host presets return an empty `presets` list and
+  `-1` for `selected_preset_index`; clients should hide preset controls in that
+  case.
 
 </details>
 
@@ -557,4 +582,3 @@ For code contributions and feedback, many thanks to:
 - Mark Marijnissen ([markmarijnissen](https://github.com/markmarijnissen))
 - [capturcus](https://github.com/capturcus)
 - Esa Ruoho a.k.a. Lackluster ([esaruoho](https://github.com/esaruoho))
-
